@@ -58,7 +58,7 @@ leatt/
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/leatt.git
+git clone https://github.com/BenjiPy/Leatt
 cd leatt
 
 # Create virtual environment
