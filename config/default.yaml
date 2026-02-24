@@ -1,0 +1,62 @@
+# Leatt Default Configuration
+
+app:
+  name: "Leatt"
+  version: "0.1.0"
+  learning_mode: true
+  learning_duration_days: 7
+
+monitoring:
+  process:
+    enabled: true
+    interval_seconds: 10
+    track_network: true
+    track_io: true
+  
+  file:
+    enabled: true
+    watched_folders:
+      - "~/Documents"
+      - "~/Downloads"
+      - "~/.ssh"
+    sensitive_extensions:
+      - ".key"
+      - ".pem"
+      - ".env"
+      - ".credentials"
+      - ".p12"
+      - ".pfx"
+      - ".kdbx"
+  
+  network:
+    enabled: true
+    interval_seconds: 10
+    track_uploads: true
+    track_connections: true
+  
+  registry:
+    enabled: true
+    watched_keys:
+      - "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+      - "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+      - "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce"
+
+alerts:
+  notifications_enabled: true
+  sound_enabled: false
+  log_to_file: true
+
+database:
+  path: "data/leatt.db"
+  retention_days: 30
+
+web:
+  enabled: false
+  host: "127.0.0.1"
+  port: 8080
+
+ml:
+  enabled: false
+  model_path: "data/models/anomaly_detector.joblib"
+  retrain_interval_hours: 24
+  min_samples_for_training: 1000

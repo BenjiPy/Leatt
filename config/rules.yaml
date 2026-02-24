@@ -1,0 +1,83 @@
+# Leatt Detection Rules
+
+network:
+  max_upload_mb_per_min: 50
+  max_connections_per_process: 100
+  suspicious_ports:
+    - 4444
+    - 5555
+    - 6666
+    - 1337
+    - 31337
+  blocked_destinations: []
+
+files:
+  max_reads_per_min: 100
+  sensitive_extensions:
+    - ".key"
+    - ".pem"
+    - ".env"
+    - ".credentials"
+    - ".p12"
+    - ".pfx"
+    - ".kdbx"
+    - ".wallet"
+  protected_folders:
+    - "~/.ssh"
+    - "~/Documents/Passwords"
+    - "~/.gnupg"
+    - "~/.aws"
+
+processes:
+  suspicious_names:
+    - "mimikatz"
+    - "lazagne"
+    - "keylogger"
+    - "procdump"
+    - "pwdump"
+    - "gsecdump"
+    - "wce"
+  
+  suspicious_behaviors:
+    - name: "rapid_file_access"
+      description: "Process accessing many files quickly"
+      threshold_files_per_min: 50
+    
+    - name: "credential_access"
+      description: "Process accessing credential files"
+      patterns:
+        - "**/passwords*"
+        - "**/*.kdbx"
+        - "**/credentials*"
+    
+    - name: "data_staging"
+      description: "Process copying data to temp folders before upload"
+      temp_folders:
+        - "%TEMP%"
+        - "/tmp"
+
+heuristics:
+  correlation_window_seconds: 60
+  
+  patterns:
+    - name: "exfiltration_chain"
+      description: "New process + sensitive file access + network upload"
+      risk_score: 80
+      conditions:
+        - "process_age_minutes < 5"
+        - "accessed_sensitive_files > 0"
+        - "bytes_uploaded > 1048576"
+    
+    - name: "credential_theft"
+      description: "Process accessing browser credential files"
+      risk_score: 90
+      file_patterns:
+        - "**/Login Data"
+        - "**/cookies.sqlite"
+        - "**/key4.db"
+
+scoring:
+  low_threshold: 30
+  medium_threshold: 60
+  high_threshold: 80
+  critical_threshold: 95
