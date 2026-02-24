@@ -28,6 +28,8 @@ class Config:
         """Load configuration files."""
         default_path = self.config_dir / "default.yaml"
         rules_path = self.config_dir / "rules.yaml"
+        user_path = self.config_dir / "user.yaml"
+        whitelist_path = self.config_dir / "whitelist.yaml"
         
         if default_path.exists():
             with open(default_path, "r", encoding="utf-8") as f:
@@ -36,12 +38,33 @@ class Config:
         else:
             logger.warning(f"Default config not found at {default_path}")
         
+        if user_path.exists():
+            with open(user_path, "r", encoding="utf-8") as f:
+                user_config = yaml.safe_load(f) or {}
+                self._merge_config(self._default, user_config)
+            logger.info(f"Loaded user config from {user_path}")
+        
         if rules_path.exists():
             with open(rules_path, "r", encoding="utf-8") as f:
                 self._rules = yaml.safe_load(f) or {}
             logger.info(f"Loaded rules config from {rules_path}")
         else:
             logger.warning(f"Rules config not found at {rules_path}")
+        
+        self._whitelist_config: list[str] = []
+        if whitelist_path.exists():
+            with open(whitelist_path, "r", encoding="utf-8") as f:
+                whitelist_data = yaml.safe_load(f) or {}
+                self._whitelist_config = whitelist_data.get("trusted_processes", [])
+            logger.info(f"Loaded {len(self._whitelist_config)} entries from whitelist config")
+    
+    def _merge_config(self, base: dict, override: dict) -> None:
+        """Recursively merge override config into base config."""
+        for key, value in override.items():
+            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+                self._merge_config(base[key], value)
+            else:
+                base[key] = value
     
     def reload(self) -> None:
         """Reload configuration from files."""
@@ -105,6 +128,14 @@ class Config:
     @property
     def sensitive_extensions(self) -> list[str]:
         return self.get("monitoring.file.sensitive_extensions", [])
+    
+    @property
+    def sensitive_patterns(self) -> list[str]:
+        return self.get("monitoring.file.sensitive_patterns", [])
+    
+    @property
+    def user_whitelist(self) -> list[str]:
+        return self._whitelist_config if hasattr(self, '_whitelist_config') else []
     
     @property
     def network_monitoring_enabled(self) -> bool:

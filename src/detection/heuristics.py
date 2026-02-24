@@ -142,6 +142,25 @@ class HeuristicsEngine:
             },
         ))
         
+        patterns.append(HeuristicPattern(
+            name="trusted_process_anomaly",
+            description="Trusted process exhibiting unusual behavior (potential hijacking/injection)",
+            risk_score=70.0,
+            conditions={
+                "is_trusted": True,
+                "anomaly_indicators": ["high_io", "many_connections", "unusual_network"],
+            },
+        ))
+        
+        patterns.append(HeuristicPattern(
+            name="pid_hijack_attempt",
+            description="Process identity changed or PID reused suspiciously",
+            risk_score=95.0,
+            conditions={
+                "event_types": ["pid_hijack", "process_mutation"],
+            },
+        ))
+        
         return patterns
     
     def _get_or_create_activity(self, pid: int, name: str) -> ProcessActivity:

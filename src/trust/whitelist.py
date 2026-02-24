@@ -28,11 +28,14 @@ class Whitelist:
     """Manage trusted process whitelist."""
     
     def __init__(self):
+        from ..utils.config import get_config
         self.db = get_database()
+        self.config = get_config()
         self._cache: dict[str, WhitelistEntry] = {}
         self._system_processes: set[str] = set()
         
         self._load_system_defaults()
+        self._load_user_whitelist()
     
     def _load_system_defaults(self) -> None:
         """Load default system processes into whitelist."""
@@ -150,6 +153,14 @@ class Whitelist:
         self._system_processes = {p.lower() for p in system_processes}
         logger.info(f"Loaded {len(self._system_processes)} default system processes")
     
+    def _load_user_whitelist(self) -> None:
+        """Load user-defined whitelist from config."""
+        user_whitelist = self.config.user_whitelist
+        if user_whitelist:
+            for proc in user_whitelist:
+                self._system_processes.add(proc.lower())
+            logger.info(f"Loaded {len(user_whitelist)} user-defined trusted processes")
+    
     def is_trusted(
         self,
         name: str,
@@ -189,8 +200,20 @@ class Whitelist:
         publisher: Optional[str] = None,
         added_by: str = "user",
         reason: Optional[str] = None,
-    ) -> WhitelistEntry:
-        """Add a process to the whitelist."""
+    ) -> Optional[WhitelistEntry]:
+        """Add a process to the whitelist. Returns None if already exists."""
+        if self.is_trusted(name, path, hash_sha256):
+            logger.debug(f"Process already whitelisted: {name}")
+            return None
+        
+        with self.db.get_session() as session:
+            existing = session.query(TrustedProcess).filter(
+                TrustedProcess.name.ilike(name)
+            ).first()
+            if existing:
+                logger.debug(f"Process already in database: {name}")
+                return None
+        
         self.db.add_trusted_process(
             name=name,
             path=path,

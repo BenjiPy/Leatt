@@ -55,6 +55,8 @@ Thumbs.db
 
 # Local configuration overrides
 config/local.yaml
+config/user.yaml
+config/whitelist.yaml
 
 # Logs
 *.log

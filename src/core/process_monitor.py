@@ -11,6 +11,7 @@ import psutil
 from ..utils.logger import get_logger
 from ..utils.platform import PlatformUtils
 from ..utils.database import get_database
+from ..trust.whitelist import Whitelist
 
 logger = get_logger("process_monitor")
 
@@ -50,10 +51,12 @@ class ProcessMonitor:
         self.interval = interval
         
         self.db = get_database()
+        self._whitelist = Whitelist()
         
         self._known_processes: dict[int, ProcessInfo] = {}
         self._previous_io: dict[int, tuple[int, int]] = {}
         self._previous_net: dict[int, tuple[int, int]] = {}
+        self._pid_fingerprints: dict[int, tuple[str, str, float]] = {}
     
     def _get_process_info(self, proc: psutil.Process) -> Optional[ProcessInfo]:
         """Extract information from a psutil Process object."""
@@ -130,24 +133,27 @@ class ProcessMonitor:
     
     def _check_new_process(self, info: ProcessInfo) -> None:
         """Handle a newly detected process."""
-        is_trusted = self.db.is_process_trusted(
-            name=info.name,
-            path=info.path,
-        )
-        info.is_trusted = is_trusted
-        
         if info.path and info.path not in ("Registry", "MemCompression", "System", "Idle"):
             expanded_path = PlatformUtils.expand_path(info.path)
             if expanded_path.exists():
                 info.hash_sha256 = PlatformUtils.compute_file_hash(expanded_path)
         
-        self.db.add_process(
-            pid=info.pid,
+        is_trusted = self._whitelist.is_trusted(
             name=info.name,
             path=info.path,
-            user=info.user,
             hash_sha256=info.hash_sha256,
         )
+        info.is_trusted = is_trusted
+        
+        self._pid_fingerprints[info.pid] = (
+            info.name,
+            info.path or "",
+            info.create_time,
+        )
+        
+        info.risk_score = self._calculate_risk_score(info)
+        
+        self._save_process_to_db(info)
         
         process_age_seconds = time.time() - info.create_time if info.create_time > 0 else float('inf')
         is_recently_started = process_age_seconds < 60
@@ -164,14 +170,145 @@ class ProcessMonitor:
                     "user": info.user,
                     "cmdline": info.cmdline,
                     "is_trusted": is_trusted,
+                    "risk_score": info.risk_score,
                     "process_age_seconds": process_age_seconds,
                 },
             )
             self.event_queue.put(event)
-            logger.debug(f"New untrusted process detected: {info.name} (PID: {info.pid}, age: {process_age_seconds:.0f}s)")
+            logger.debug(f"New untrusted process detected: {info.name} (PID: {info.pid}, risk: {info.risk_score:.0f})")
+    
+    def _check_pid_hijacking(self, info: ProcessInfo) -> bool:
+        """Check if a PID has been hijacked by a different process."""
+        if info.pid not in self._pid_fingerprints:
+            return False
+        
+        old_name, old_path, old_create_time = self._pid_fingerprints[info.pid]
+        
+        if info.create_time != old_create_time:
+            from .daemon import MonitorEvent
+            event = MonitorEvent(
+                source="process_monitor",
+                event_type="pid_hijack",
+                data={
+                    "pid": info.pid,
+                    "process_name": info.name,
+                    "path": info.path,
+                    "old_name": old_name,
+                    "old_path": old_path,
+                    "is_trusted": info.is_trusted,
+                    "alert": "PID reused by different process - possible hijacking attempt",
+                },
+                risk_score=80.0,
+            )
+            self.event_queue.put(event)
+            logger.warning(f"PID hijacking detected: PID {info.pid} was {old_name}, now {info.name}")
+            
+            self._pid_fingerprints[info.pid] = (info.name, info.path or "", info.create_time)
+            return True
+        
+        if info.name != old_name or (info.path or "") != old_path:
+            from .daemon import MonitorEvent
+            event = MonitorEvent(
+                source="process_monitor",
+                event_type="process_mutation",
+                data={
+                    "pid": info.pid,
+                    "process_name": info.name,
+                    "path": info.path,
+                    "old_name": old_name,
+                    "old_path": old_path,
+                    "is_trusted": info.is_trusted,
+                    "alert": "Process identity changed - possible code injection",
+                },
+                risk_score=90.0,
+            )
+            self.event_queue.put(event)
+            logger.warning(f"Process mutation detected: PID {info.pid} changed from {old_name} to {info.name}")
+            return True
+        
+        return False
+    
+    def _calculate_risk_score(self, info: ProcessInfo) -> float:
+        """Calculate risk score for a process.
+        
+        Even trusted processes can have risk scores if they exhibit
+        anomalous behavior (potential hijacking/injection).
+        """
+        score = 0.0
+        
+        if info.is_trusted:
+            if info.num_connections > 100:
+                score += min(30.0, (info.num_connections - 100) * 0.3)
+            
+            if info.write_bytes > 500 * 1024 * 1024:
+                score += 20.0
+            
+            if info.cpu_percent > 90.0:
+                score += 10.0
+            
+            return min(50.0, score)
+        
+        if not info.path:
+            score += 20.0
+        
+        if info.num_connections > 10:
+            score += min(20.0, info.num_connections * 0.5)
+        
+        if info.memory_percent > 5.0:
+            score += min(15.0, info.memory_percent)
+        
+        if info.cpu_percent > 50.0:
+            score += min(15.0, (info.cpu_percent - 50) * 0.3)
+        
+        if info.write_bytes > 50 * 1024 * 1024:
+            score += 15.0
+        
+        if info.cmdline:
+            cmdline_str = ' '.join(info.cmdline).lower()
+            suspicious_patterns = ['powershell', 'cmd', 'wget', 'curl', 'invoke-', 'bypass', 'hidden', 
+                                   'encodedcommand', 'base64', '-enc', '-e ', 'downloadstring', 
+                                   'iex', 'invoke-expression', 'net user', 'mimikatz']
+            for pattern in suspicious_patterns:
+                if pattern in cmdline_str:
+                    score += 15.0
+                    break
+        
+        return min(100.0, score)
+    
+    def _save_process_to_db(self, info: ProcessInfo) -> None:
+        """Save process record to database with trust and risk info."""
+        with self.db.get_session() as session:
+            from ..utils.database import ProcessRecord
+            existing = session.query(ProcessRecord).filter_by(
+                name=info.name, path=info.path
+            ).first()
+            
+            if existing:
+                existing.last_seen = __import__('datetime').datetime.utcnow()
+                existing.pid = info.pid
+                existing.is_trusted = info.is_trusted
+                existing.risk_score = info.risk_score
+                session.commit()
+            else:
+                process = ProcessRecord(
+                    pid=info.pid,
+                    name=info.name,
+                    path=info.path,
+                    user=info.user,
+                    hash_sha256=info.hash_sha256,
+                    is_trusted=info.is_trusted,
+                    risk_score=info.risk_score,
+                )
+                session.add(process)
+                session.commit()
     
     def _check_process_behavior(self, info: ProcessInfo) -> None:
-        """Analyze process behavior changes."""
+        """Analyze process behavior changes.
+        
+        Monitors ALL processes including trusted ones for anomalous behavior.
+        Trusted processes have higher thresholds but are still monitored
+        to detect potential hijacking or code injection.
+        """
         from .daemon import MonitorEvent
         
         prev_io = self._previous_io.get(info.pid, (0, 0))
@@ -179,32 +316,46 @@ class ProcessMonitor:
         io_delta_write = info.write_bytes - prev_io[1]
         self._previous_io[info.pid] = (info.read_bytes, info.write_bytes)
         
-        mb_threshold = 10 * 1024 * 1024
+        mb_threshold_untrusted = 10 * 1024 * 1024
+        mb_threshold_trusted = 100 * 1024 * 1024
+        mb_threshold = mb_threshold_trusted if info.is_trusted else mb_threshold_untrusted
+        
         if io_delta_read > mb_threshold or io_delta_write > mb_threshold:
+            severity = "anomaly_trusted" if info.is_trusted else "high_io"
             event = MonitorEvent(
                 source="process_monitor",
-                event_type="high_io",
+                event_type=severity,
                 data={
                     "pid": info.pid,
                     "process_name": info.name,
+                    "path": info.path,
                     "read_bytes_delta": io_delta_read,
                     "write_bytes_delta": io_delta_write,
                     "is_trusted": info.is_trusted,
+                    "alert": f"Unusual I/O activity from {'trusted' if info.is_trusted else 'untrusted'} process",
                 },
+                risk_score=40.0 if info.is_trusted else 60.0,
             )
             self.event_queue.put(event)
-            logger.debug(f"High I/O detected: {info.name} - Read: {io_delta_read}, Write: {io_delta_write}")
+            logger.warning(f"High I/O from {'TRUSTED' if info.is_trusted else 'untrusted'}: {info.name} - Write: {io_delta_write / 1024 / 1024:.1f}MB")
         
-        if info.num_connections > 50:
+        conn_threshold_untrusted = 50
+        conn_threshold_trusted = 200
+        conn_threshold = conn_threshold_trusted if info.is_trusted else conn_threshold_untrusted
+        
+        if info.num_connections > conn_threshold:
             event = MonitorEvent(
                 source="process_monitor",
                 event_type="many_connections",
                 data={
                     "pid": info.pid,
                     "process_name": info.name,
+                    "path": info.path,
                     "num_connections": info.num_connections,
                     "is_trusted": info.is_trusted,
+                    "alert": f"Excessive network connections from {'trusted' if info.is_trusted else 'untrusted'} process",
                 },
+                risk_score=30.0 if info.is_trusted else 50.0,
             )
             self.event_queue.put(event)
     
@@ -223,8 +374,13 @@ class ProcessMonitor:
                 if info.pid not in self._known_processes:
                     self._check_new_process(info)
                 else:
-                    info.is_trusted = self._known_processes[info.pid].is_trusted
-                    self._check_process_behavior(info)
+                    hijacked = self._check_pid_hijacking(info)
+                    if hijacked:
+                        self._check_new_process(info)
+                    else:
+                        info.is_trusted = self._whitelist.is_trusted(info.name, info.path)
+                        info.risk_score = self._calculate_risk_score(info)
+                        self._check_process_behavior(info)
                 
                 self._known_processes[info.pid] = info
             

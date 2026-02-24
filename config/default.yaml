@@ -19,6 +19,8 @@ monitoring:
       - "~/Documents"
       - "~/Downloads"
       - "~/.ssh"
+      - "~/.gnupg"
+      - "~/.aws"
     sensitive_extensions:
       - ".key"
       - ".pem"
@@ -27,6 +29,25 @@ monitoring:
       - ".p12"
       - ".pfx"
       - ".kdbx"
+      - ".keystore"
+      - ".jks"
+      - ".gpg"
+      - ".asc"
+      - ".ppk"
+      - ".id_rsa"
+      - ".id_ed25519"
+      - ".ovpn"
+      - ".rdp"
+      - ".wallet"
+      - ".seed"
+    sensitive_patterns:
+      - "password"
+      - "secret"
+      - "credential"
+      - "private"
+      - "token"
+      - "api_key"
+      - "apikey"
   
   network:
     enabled: true
@@ -43,7 +64,7 @@ monitoring:
 
 alerts:
   notifications_enabled: true
-  sound_enabled: false
+  sound_enabled: true
   log_to_file: true
 
 database:

@@ -107,10 +107,13 @@ class SystrayApp:
                 self.notification_manager.enable()
         
         def on_quit(icon, item):
+            import os
+            import sys
             self._running = False
-            icon.stop()
             if self._on_quit:
                 self._on_quit()
+            icon.stop()
+            os._exit(0)
         
         def get_pause_text(item):
             return "Resume" if self._status == TrayStatus.PAUSED else "Pause"

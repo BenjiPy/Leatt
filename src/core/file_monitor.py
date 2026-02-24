@@ -28,16 +28,25 @@ logger = get_logger("file_monitor")
 class LeattFileHandler(FileSystemEventHandler):
     """Handle file system events."""
     
-    def __init__(self, event_queue: Queue, sensitive_extensions: list[str]):
+    def __init__(self, event_queue: Queue, sensitive_extensions: list[str], sensitive_patterns: list[str] = None):
         super().__init__()
         self.event_queue = event_queue
         self.sensitive_extensions = [ext.lower() for ext in sensitive_extensions]
+        self.sensitive_patterns = [p.lower() for p in (sensitive_patterns or [])]
         self.db = get_database()
     
     def _is_sensitive_file(self, path: str) -> bool:
         """Check if a file is considered sensitive."""
         path_lower = path.lower()
-        return any(path_lower.endswith(ext) for ext in self.sensitive_extensions)
+        
+        if any(path_lower.endswith(ext) for ext in self.sensitive_extensions):
+            return True
+        
+        filename = Path(path_lower).name
+        if any(pattern in filename for pattern in self.sensitive_patterns):
+            return True
+        
+        return False
     
     def _create_event(self, event_type: str, src_path: str, dest_path: Optional[str] = None) -> None:
         """Create and queue a file event."""
@@ -106,6 +115,7 @@ class FileMonitor:
         
         config = get_config()
         self.sensitive_extensions = config.sensitive_extensions
+        self.sensitive_patterns = config.sensitive_patterns
         
         if watched_folders:
             self.watched_folders = watched_folders
@@ -126,6 +136,7 @@ class FileMonitor:
         self._handler = LeattFileHandler(
             event_queue=self.event_queue,
             sensitive_extensions=self.sensitive_extensions,
+            sensitive_patterns=self.sensitive_patterns,
         )
         
         self._observer = Observer()
