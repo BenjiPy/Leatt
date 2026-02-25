@@ -504,6 +504,11 @@ class WebDashboard:
         .badge.high { background: rgba(255, 71, 87, 0.15); color: #ff4757; }
         .badge.critical { background: rgba(255, 71, 87, 0.25); color: #ff6b7a; animation: blink 1s infinite; }
         @keyframes blink { 50% { opacity: 0.7; } }
+        .badge.file-created { background: rgba(0, 212, 170, 0.15); color: #00d4aa; }
+        .badge.file-deleted { background: rgba(255, 71, 87, 0.15); color: #ff4757; }
+        .badge.file-modified { background: rgba(255, 165, 2, 0.15); color: #ffa502; }
+        .badge.file-moved { background: rgba(155, 89, 182, 0.15); color: #9b59b6; }
+        .badge.file-accessed { background: rgba(52, 152, 255, 0.15); color: #3498ff; }
         
         .btn {
             padding: 8px 14px; border-radius: 8px; border: none;
@@ -1008,7 +1013,7 @@ class WebDashboard:
                         <td style="color: var(--text-secondary);">${formatTime(f.timestamp)}</td>
                         <td><span class="truncate" style="font-weight: 500;">${f.process_name || '-'}</span></td>
                         <td><span class="truncate" title="${f.file_path}" style="font-size: 12px; color: var(--text-secondary);">${f.file_path}</span></td>
-                        <td><span class="badge low">${f.event_type}</span></td>
+                        <td>${getFileActionBadge(f.event_type)}</td>
                         <td>${f.is_sensitive ? '<span class="badge high">⚠ SENSITIVE</span>' : '<span style="color: var(--text-muted);">No</span>'}</td>
                     </tr>
                 `).join('');
@@ -1185,6 +1190,22 @@ class WebDashboard:
             if (score >= 60) return 'risk-high';
             if (score >= 30) return 'risk-med';
             return 'risk-low';
+        }
+        
+        function getFileActionBadge(action) {
+            const type = (action || '').toLowerCase();
+            if (type.includes('created') || type.includes('create')) {
+                return '<span class="badge file-created">+ CREATED</span>';
+            } else if (type.includes('deleted') || type.includes('delete')) {
+                return '<span class="badge file-deleted">✕ DELETED</span>';
+            } else if (type.includes('modified') || type.includes('modify') || type.includes('changed')) {
+                return '<span class="badge file-modified">✎ MODIFIED</span>';
+            } else if (type.includes('moved') || type.includes('renamed')) {
+                return '<span class="badge file-moved">→ MOVED</span>';
+            } else if (type.includes('accessed') || type.includes('read')) {
+                return '<span class="badge file-accessed">👁 ACCESSED</span>';
+            }
+            return `<span class="badge low">${action}</span>`;
         }
         
         function loadData() {
