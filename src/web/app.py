@@ -257,6 +257,76 @@ class WebDashboard:
             
             return {"success": success}
         
+        @app.post("/api/quarantine/{pid}")
+        async def quarantine_process(pid: int, request: Request):
+            """Kill/quarantine a process by PID."""
+            import psutil
+            from ..utils.database import get_database
+            
+            data = await request.json() if request.headers.get("content-type") == "application/json" else {}
+            reason = data.get("reason", "Manually quarantined by user")
+            
+            db = get_database()
+            
+            try:
+                proc = psutil.Process(pid)
+                name = proc.name()
+                path = proc.exe() if proc.exe() else None
+                
+                proc.terminate()
+                
+                try:
+                    proc.wait(timeout=3)
+                except psutil.TimeoutExpired:
+                    proc.kill()
+                
+                db.add_quarantine_event(
+                    pid=pid,
+                    name=name,
+                    path=path,
+                    reason=reason,
+                    killed_by="user",
+                    success=True,
+                )
+                
+                return {"success": True, "name": name, "message": f"Process {name} (PID: {pid}) terminated"}
+                
+            except psutil.NoSuchProcess:
+                return {"success": False, "error": f"Process with PID {pid} not found"}
+            except psutil.AccessDenied:
+                db.add_quarantine_event(
+                    pid=pid,
+                    name="unknown",
+                    reason=reason,
+                    killed_by="user",
+                    success=False,
+                )
+                return {"success": False, "error": f"Access denied - cannot kill PID {pid} (try running as admin)"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+        
+        @app.get("/api/quarantine")
+        async def get_quarantine_history():
+            """Get quarantine history."""
+            from ..utils.database import get_database
+            
+            db = get_database()
+            events = db.get_quarantine_history(limit=50)
+            
+            return [
+                {
+                    "id": e.id,
+                    "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+                    "pid": e.pid,
+                    "name": e.name,
+                    "path": e.path,
+                    "reason": e.reason,
+                    "killed_by": e.killed_by,
+                    "success": e.success,
+                }
+                for e in events
+            ]
+        
         @app.get("/api/config")
         async def get_config_info():
             """Get current configuration."""
@@ -673,6 +743,7 @@ class WebDashboard:
             <button class="tab" onclick="showTab('network')">🌐 Network</button>
             <button class="tab" onclick="showTab('files')">📁 Files</button>
             <button class="tab" onclick="showTab('whitelist')">✓ Whitelist</button>
+            <button class="tab" onclick="showTab('quarantine')">☠ Quarantine</button>
         </div>
         
         <div class="section" id="alerts-section">
@@ -739,6 +810,7 @@ class WebDashboard:
                             <th>Trusted</th>
                             <th>Risk</th>
                             <th>Last Seen</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="processes-table"></tbody>
@@ -799,6 +871,30 @@ class WebDashboard:
                 <button class="btn btn-primary" onclick="addToWhitelist()">+ Add to Whitelist</button>
             </div>
             <div class="whitelist-grid" id="whitelist-grid"></div>
+        </div>
+        
+        <div class="section" id="quarantine-section" style="display:none;">
+            <div class="section-header">
+                <h2>☠ Quarantine Log</h2>
+            </div>
+            <div class="note-box" style="margin-bottom: 16px;">
+                ⚠️ This log shows all processes that have been terminated. Killing critical system processes may cause instability.
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>PID</th>
+                            <th>Name</th>
+                            <th>Path</th>
+                            <th>Reason</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="quarantine-table"></tbody>
+                </table>
+            </div>
         </div>
         
         <div class="footer-info">
@@ -913,6 +1009,7 @@ class WebDashboard:
                         ${a.acknowledged ? '<span class="dismissed">Dismissed</span>' : `
                             <button class="btn btn-icon btn-sm" onclick="inspectAlert(${a.id})" title="Inspect">🔍</button>
                             ${a.process_name ? `<button class="btn btn-primary btn-sm" onclick="trustProcess('${a.process_name}')" title="Trust">✓</button>` : ''}
+                            ${a.process_pid ? `<button class="btn btn-danger btn-sm" onclick="quarantineProcess(${a.process_pid}, '${a.process_name || ''}')" title="Kill Process">☠</button>` : ''}
                             <button class="btn btn-secondary btn-sm" onclick="dismissAlert(${a.id})">Dismiss</button>
                         `}
                     </td>
@@ -942,7 +1039,7 @@ class WebDashboard:
             }
             
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
+                tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state">
                     <div class="empty-state-icon">📭</div>
                     <div class="empty-state-text">No processes matching filter</div>
                 </div></td></tr>`;
@@ -964,6 +1061,9 @@ class WebDashboard:
                     </td>
                     <td><span class="risk-value ${getRiskClass(p.risk_score)}">${p.risk_score.toFixed(0)}</span></td>
                     <td style="color: var(--text-secondary);">${formatTime(p.last_seen)}</td>
+                    <td class="actions">
+                        <button class="btn btn-danger btn-sm" onclick="quarantineProcess(${p.pid}, '${p.name}')" title="Kill Process">☠ Kill</button>
+                    </td>
                 </tr>
             `).join('');
         }
@@ -1113,6 +1213,59 @@ class WebDashboard:
             loadStats();
         }
         
+        async function quarantineProcess(pid, name) {
+            if (!confirm(`⚠️ KILL PROCESS\\n\\nAre you sure you want to terminate "${name}" (PID: ${pid})?\\n\\nThis action cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                const res = await fetch(`/api/quarantine/${pid}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason: 'Manually killed by user' })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showToast(`Process "${name}" terminated`, 'success');
+                    loadProcesses();
+                    loadStats();
+                    if (currentTab === 'quarantine') loadQuarantine();
+                } else {
+                    showToast(data.error || 'Failed to kill process', 'error');
+                }
+            } catch (e) {
+                showToast('Error: ' + e.message, 'error');
+            }
+        }
+        
+        async function loadQuarantine() {
+            try {
+                const res = await fetch('/api/quarantine');
+                const data = await res.json();
+                const tbody = document.getElementById('quarantine-table');
+                
+                if (data.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
+                        <div class="empty-state-icon">🛡️</div>
+                        <div class="empty-state-text">No processes quarantined yet</div>
+                    </div></td></tr>`;
+                    return;
+                }
+                
+                tbody.innerHTML = data.map(q => `
+                    <tr>
+                        <td style="color: var(--text-secondary);">${formatTime(q.timestamp)}</td>
+                        <td><span style="font-family: 'SF Mono', monospace;">${q.pid}</span></td>
+                        <td><span style="font-weight: 500;">${q.name}</span></td>
+                        <td><span class="truncate" title="${q.path || ''}" style="font-size: 12px; color: var(--text-secondary);">${q.path || '-'}</span></td>
+                        <td>${q.reason || '-'}</td>
+                        <td>${q.success ? '<span class="badge file-deleted">KILLED</span>' : '<span class="badge medium">FAILED</span>'}</td>
+                    </tr>
+                `).join('');
+            } catch (e) { console.error('Quarantine error:', e); }
+        }
+        
         function inspectAlert(id) {
             const alert = alertsCache.find(a => a.id === id);
             if (!alert) return;
@@ -1217,6 +1370,7 @@ class WebDashboard:
                 case 'network': loadNetwork(); break;
                 case 'files': loadFiles(); break;
                 case 'whitelist': break;
+                case 'quarantine': loadQuarantine(); break;
             }
         }
         

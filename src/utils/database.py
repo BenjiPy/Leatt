@@ -98,6 +98,20 @@ class TrustedProcess(Base):
     reason = Column(Text)
 
 
+class QuarantineEvent(Base):
+    """Log of quarantined (killed) processes."""
+    __tablename__ = "quarantine_events"
+    
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    pid = Column(Integer, nullable=False)
+    name = Column(String(255), nullable=False)
+    path = Column(Text)
+    reason = Column(Text)
+    killed_by = Column(String(50), default="user")
+    success = Column(Boolean, default=True)
+
+
 class Database:
     """Database connection and operations."""
     
@@ -266,6 +280,38 @@ class Database:
             return session.query(Alert).filter_by(
                 acknowledged=False
             ).order_by(Alert.timestamp.desc()).all()
+    
+    def add_quarantine_event(
+        self,
+        pid: int,
+        name: str,
+        path: Optional[str] = None,
+        reason: Optional[str] = None,
+        killed_by: str = "user",
+        success: bool = True,
+    ) -> QuarantineEvent:
+        """Log a quarantine (kill) event."""
+        with self.get_session() as session:
+            event = QuarantineEvent(
+                pid=pid,
+                name=name,
+                path=path,
+                reason=reason,
+                killed_by=killed_by,
+                success=success,
+            )
+            session.add(event)
+            session.commit()
+            session.refresh(event)
+            logger.info(f"Quarantine event logged: {name} (PID: {pid})")
+            return event
+    
+    def get_quarantine_history(self, limit: int = 50) -> list[QuarantineEvent]:
+        """Get recent quarantine events."""
+        with self.get_session() as session:
+            return session.query(QuarantineEvent).order_by(
+                QuarantineEvent.timestamp.desc()
+            ).limit(limit).all()
 
 
 def get_database() -> Database:
