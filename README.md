@@ -1,146 +1,182 @@
-# Leatt - Data Leak Prevention
+<div align="center">
 
-A lightweight security application for individuals that monitors background processes to detect and prevent sensitive data leaks.
+# 🛡️ LEATT
 
-## Features
+### Data Leak Prevention for Individuals
 
-- **Process Monitoring**: Track running processes, detect new/suspicious ones, compute file hashes
-- **File Monitoring**: Watch sensitive folders (Documents, Downloads, .ssh) for access to critical files
-- **Network Monitoring**: Detect large uploads, suspicious ports, multiple destinations
-- **Registry Monitoring** (Windows): Monitor startup keys for persistence attempts
-- **Trust System**: Whitelist with 70+ pre-trusted apps, process signatures, learning mode
-- **Detection Engine**: Rules-based + heuristic patterns + ML anomaly detection (Isolation Forest)
-- **Web Dashboard**: Real-time alerts, process list, network/file events
-- **System Tray**: Lightweight UI with notifications
+[![Python](https://img.shields.io/badge/Python-3.10+-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![License](https://img.shields.io/badge/License-MIT-00d4aa?style=for-the-badge)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20|%20Linux-blue?style=for-the-badge)]()
 
-## Architecture
+*A lightweight security application that monitors background processes to detect and prevent sensitive data leaks.*
+
+---
+
+</div>
+
+## ✨ Features
+
+<table>
+<tr>
+<td width="50%">
+
+### 🔍 Monitoring
+- **Process Tracking** - Detect new/suspicious processes
+- **File Watching** - Monitor sensitive folders
+- **Network Analysis** - Detect large uploads
+- **Registry Monitor** - Track persistence attempts (Windows)
+
+</td>
+<td width="50%">
+
+### 🧠 Detection
+- **Rules Engine** - 8 configurable rules
+- **Heuristics** - 7 behavioral patterns
+- **ML Detector** - Isolation Forest anomaly detection
+- **PID Hijacking** - Detect process identity theft
+
+</td>
+</tr>
+</table>
+
+### 🎯 Trust System
+> 70+ pre-trusted applications including Chrome, VSCode, Spotify, Discord, and more.
+> Whitelist management with real-time updates.
+
+### 🖥️ Dashboard
+> Modern web interface with real-time alerts, filtering, and glassmorphism design.
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# Clone & Setup
+git clone https://github.com/BenjiPy/Leatt
+cd Leatt
+python -m venv venv && .\venv\Scripts\activate
+pip install -r requirements.txt
+
+# Run with web dashboard
+python -m src --web
+```
+
+🌐 Dashboard available at `http://127.0.0.1:8080`
+
+---
+
+## 📁 Architecture
 
 ```
 leatt/
-├── config/
+├── 📂 config/
 │   ├── default.yaml          # Main configuration
-│   └── rules.yaml            # Detection rules
-├── src/
-│   ├── main.py               # Entry point
-│   ├── __main__.py           # Module runner
-│   ├── core/
-│   │   ├── daemon.py         # Main orchestrator
-│   │   ├── process_monitor.py
-│   │   ├── file_monitor.py
-│   │   ├── network_monitor.py
-│   │   └── registry_monitor.py
-│   ├── detection/
-│   │   ├── rules_engine.py   # Rule-based detection
-│   │   ├── heuristics.py     # Behavioral analysis
-│   │   └── ml_detector.py    # Isolation Forest
-│   ├── trust/
-│   │   ├── whitelist.py      # Trusted processes
-│   │   ├── process_signature.py
-│   │   └── learning.py       # Baseline learning
-│   ├── ui/
-│   │   ├── systray.py        # System tray app
-│   │   └── notifications.py
-│   ├── web/
-│   │   └── app.py            # FastAPI dashboard
-│   └── utils/
-│       ├── config.py
-│       ├── database.py       # SQLite storage
-│       ├── logger.py
-│       └── platform.py       # OS abstraction
-├── tests/                    # Unit tests
-├── data/                     # SQLite DB & ML models (gitignored)
-├── requirements.txt
-├── setup.py
-└── run.py
+│   ├── rules.yaml            # Detection rules
+│   ├── user.yaml             # User overrides (gitignored)
+│   └── whitelist.yaml        # Custom whitelist (gitignored)
+├── 📂 src/
+│   ├── core/                 # Monitors (process, file, network, registry)
+│   ├── detection/            # Rules, heuristics, ML
+│   ├── trust/                # Whitelist & signatures
+│   ├── ui/                   # Systray & notifications
+│   ├── web/                  # FastAPI dashboard
+│   └── utils/                # Config, DB, logging
+├── 📂 data/                  # SQLite DB & ML models
+└── 📄 requirements.txt
 ```
 
-## Installation
+---
 
-```bash
-# Clone the repository
-git clone https://github.com/BenjiPy/Leatt
-cd leatt
+## ⚙️ Usage
 
-# Create virtual environment
-python -m venv venv
-.\venv\Scripts\activate  # Windows
-# or
-source venv/bin/activate  # Linux
+| Command | Description |
+|---------|-------------|
+| `python -m src` | Run in background (systray only) |
+| `python -m src --web` | Run with web dashboard |
+| `python -m src -v` | Verbose mode |
+| `python -m src --no-systray` | Background only (no UI) |
+| `python run.py --web` | Alternative entry point |
 
-# Install dependencies
-pip install -r requirements.txt
-```
+---
 
-## Usage
+## 🔒 Detection Layers
 
-```bash
-# Run Leatt
-python -m src
+| Layer | Description | Examples |
+|:------|:------------|:---------|
+| 🎯 **Rules** | Configurable thresholds | Suspicious ports, upload limits |
+| 🧩 **Heuristics** | Behavioral patterns | Exfiltration chain, credential theft |
+| 🤖 **ML** | Anomaly detection | Isolation Forest algorithm |
 
-# With web dashboard
-python -m src --web
+---
 
-# Verbose mode
-python -m src -v
+## 📦 Tech Stack
 
-# Without systray (background only)
-python -m src --no-systray
-
-# Alternative
-python run.py --web
-```
-
-The web dashboard is available at `http://127.0.0.1:8080` when enabled.
-
-## Configuration
-
-### `config/default.yaml`
-- Monitoring intervals
-- Watched folders
-- Sensitive file extensions
-- Registry keys to monitor
-- Web dashboard settings
-
-### `config/rules.yaml`
-- Network upload thresholds
-- Suspicious ports
-- Blocked process names
-- Heuristic patterns
-- Risk scoring thresholds
-
-## Detection Layers
-
-| Layer | Description |
-|-------|-------------|
-| **Rules Engine** | 8 configurable rules (suspicious ports, upload limits, etc.) |
-| **Heuristics** | 7 behavioral patterns (exfiltration chain, credential theft, etc.) |
-| **ML Detector** | Isolation Forest for anomaly detection (optional) |
-
-## Pre-trusted Applications
-
-The whitelist includes 70+ common applications:
-- **Browsers**: Chrome, Edge, Firefox, Brave, DuckDuckGo
-- **Dev Tools**: VSCode, Cursor, Node, Python, Git, Docker
-- **Apps**: Spotify, Discord, Slack, Teams, Zoom, Steam, OneDrive, Notion, Obsidian
-
-## Requirements
-
-- Python 3.10+
-- Windows 10/11 or Linux (Ubuntu 22.04+)
-
-## Tech Stack
+<div align="center">
 
 | Component | Library |
-|-----------|---------|
-| Process monitoring | psutil |
-| File monitoring | watchdog |
-| System tray | pystray + Pillow |
-| Notifications | plyer |
-| Web dashboard | FastAPI + uvicorn |
-| Database | SQLite + SQLAlchemy |
-| ML | scikit-learn |
-| Config | PyYAML |
+|:---------:|:-------:|
+| Process Monitoring | `psutil` |
+| File Watching | `watchdog` |
+| System Tray | `pystray` |
+| Notifications | `plyer` |
+| Web Dashboard | `FastAPI` |
+| Database | `SQLAlchemy` |
+| Machine Learning | `scikit-learn` |
 
-## License
+</div>
 
-MIT License
+---
+
+## 💻 Requirements
+
+- **Python** 3.10+
+- **OS**: Windows 10/11 or Linux (Ubuntu 22.04+)
+
+---
+
+## 📝 Configuration
+
+<details>
+<summary><b>config/default.yaml</b> - Main settings</summary>
+
+- Monitoring intervals
+- Watched folders (`~/Documents`, `~/Downloads`, `~/.ssh`)
+- Sensitive file extensions (`.key`, `.pem`, `.env`, etc.)
+- Web dashboard port
+
+</details>
+
+<details>
+<summary><b>config/rules.yaml</b> - Detection rules</summary>
+
+- Network upload thresholds
+- Suspicious ports list
+- Blocked process names
+- Risk scoring thresholds
+
+</details>
+
+---
+
+## ✅ Pre-trusted Applications
+
+| Category | Apps |
+|:---------|:-----|
+| 🌐 Browsers | Chrome, Edge, Firefox, Brave, DuckDuckGo |
+| 💻 Dev Tools | VSCode, Cursor, Node, Python, Git, Docker |
+| 🎵 Apps | Spotify, Discord, Slack, Teams, Zoom, Steam |
+| ☁️ Cloud | OneDrive, Notion, Obsidian |
+
+---
+
+<div align="center">
+
+## 📄 License
+
+MIT License © 2024
+
+---
+
+**Made with ❤️ for privacy-conscious individuals**
+
+</div>
